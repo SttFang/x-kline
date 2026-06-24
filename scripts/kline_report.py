@@ -8,7 +8,7 @@
 
 数据走火花「推特中转 API」(social_twitter)，需要火花 data-token。
 """
-import json, os, sys, time, argparse, statistics, urllib.request, urllib.error
+import json, os, sys, time, argparse, statistics, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timezone, timedelta
 
 API   = os.environ.get("HUOHUA_API_BASE", "https://api.huohuaapi.cn/v1")
@@ -16,20 +16,90 @@ TZ    = timezone(timedelta(hours=8))   # 「单日」按北京时间切
 ASSET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "template.html")
 
 
-# ── 火花 API ──────────────────────────────────────────────
-def token():
+# ── token（两个数据源任选其一）──────────────────────────────
+def x_token():
+    """官方 X API v2 的 Bearer token。"""
+    t = os.environ.get("X_BEARER_TOKEN")
+    if t: return t
+    p = os.path.expanduser("~/.config/x/bearer-token")
+    return open(p).read().strip() if os.path.exists(p) else None
+
+def huohua_token():
+    """火花 social_twitter 的 data-token。"""
     t = os.environ.get("HUOHUA_DATA_TOKEN")
     if t: return t
     p = os.path.expanduser("~/.config/huohua/data-token")
-    if os.path.exists(p): return open(p).read().strip()
-    sys.exit("ERROR: 未找到火花 data-token。设置 HUOHUA_DATA_TOKEN 或写入 ~/.config/huohua/data-token")
+    return open(p).read().strip() if os.path.exists(p) else None
 
+
+# ── 数据源 A：官方 X API v2 ────────────────────────────────
+X_API = "https://api.twitter.com/2"
+
+def _x_get(path, params):
+    url = X_API + path + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {x_token()}"})
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=40) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            msg = e.read().decode("utf-8", "replace")[:300]
+            if e.code in (429, 503) and attempt == 0:
+                time.sleep(8); continue
+            sys.exit(f"X API HTTP {e.code}: {msg}（注意：读取用户推文需要 X API Basic 及以上付费访问）")
+        except urllib.error.URLError as e:
+            sys.exit(f"连不上 X API：{e.reason}")
+
+def _x_ts(s):
+    fmt = "%Y-%m-%dT%H:%M:%S.%fZ" if "." in s else "%Y-%m-%dT%H:%M:%SZ"
+    return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc).timestamp()
+
+def pull_x(handle, days):
+    u = _x_get(f"/users/by/username/{handle}",
+               {"user.fields": "public_metrics,profile_image_url,description,created_at,verified"})
+    if "data" not in u:
+        sys.exit(f"X API 找不到 @{handle}: {json.dumps(u, ensure_ascii=False)[:200]}")
+    ud = u["data"]; uid = ud["id"]; pm = ud.get("public_metrics", {})
+    pf = {"name": ud.get("name") or handle, "description": ud.get("description", ""),
+          "followers": pm.get("followers_count", 0), "statuses_count": pm.get("tweet_count", 0),
+          "created_at": ud.get("created_at", ""), "is_blue_verified": bool(ud.get("verified")),
+          "profile_picture": ud.get("profile_image_url", "")}
+    start = datetime.fromtimestamp(time.time() - days * 86400, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows, page_token, calls = [], None, 0
+    while calls < 20:
+        calls += 1
+        params = {"max_results": 100, "exclude": "retweets,replies", "start_time": start,
+                  "tweet.fields": "public_metrics,created_at,note_tweet"}
+        if page_token: params["pagination_token"] = page_token
+        resp = _x_get(f"/users/{uid}/tweets", params)
+        for t in resp.get("data", []):
+            m = t.get("public_metrics", {})
+            views = m.get("impression_count")
+            if not views: continue                          # 没阅读量(太老/无impression)跳过
+            note = (t.get("note_tweet") or {}).get("text")
+            txt = (note or t.get("text", "")).replace("\n", " ")[:240]
+            rows.append({"id": t["id"], "ts": _x_ts(t["created_at"]), "views": int(views),
+                         "fav": m.get("like_count", 0), "rt": m.get("retweet_count", 0),
+                         "reply": m.get("reply_count", 0),
+                         "url": f"https://x.com/{handle}/status/{t['id']}", "text": txt})
+        page_token = resp.get("meta", {}).get("next_token")
+        print(f"  X API 第{calls}页: 累计 {len(rows)} 条", file=sys.stderr)
+        if not page_token: break
+        time.sleep(1)
+    rows.sort(key=lambda r: r["ts"])
+    return rows, pf
+
+
+# ── 数据源 B：火花 social_twitter API ──────────────────────
 def search(filters, purpose, query=""):
+    tk = huohua_token()
+    if not tk:
+        sys.exit("ERROR: 未找到火花 data-token。设置 HUOHUA_DATA_TOKEN 或写入 ~/.config/huohua/data-token")
     body = json.dumps({"source": "social_twitter", "purpose": purpose,
                        "filters": filters, "query": query,
                        "return": {"format": "json"}}).encode()
     req = urllib.request.Request(f"{API}/search", data=body, method="POST",
-        headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+        headers={"Authorization": f"Bearer {tk}", "Content-Type": "application/json"})
     for attempt in range(2):
         try:
             with urllib.request.urlopen(req, timeout=40) as r:
@@ -58,8 +128,19 @@ def wan(n):
     return str(n)
 
 
-# ── 1) 拉数据 ─────────────────────────────────────────────
-def pull(handle, days):
+# ── 1) 拉数据：按可用 token 选数据源（官方 X 优先，火花备选）──
+def pull(handle, days, source=None):
+    src = source
+    if src is None:
+        src = "x" if x_token() else ("huohua" if huohua_token() else None)
+    if src == "x":
+        if not x_token(): sys.exit("指定了 --source x 但未设置 X_BEARER_TOKEN")
+        return pull_x(handle, days)
+    if src == "huohua":
+        return pull_huohua(handle, days)
+    sys.exit("没有可用数据源 token：设置 X_BEARER_TOKEN（官方 X API）或 HUOHUA_DATA_TOKEN（火花）")
+
+def pull_huohua(handle, days):
     prof = search({"mode": "user_lookup", "username": handle}, "取博主资料用于K线报告")
     pf = (prof.get("items") or [{}])[0].get("fields", {})
     cutoff = time.time() - days * 86400
@@ -263,10 +344,10 @@ def render(kline, out_path):
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(render_str(kline))
 
-def generate(handle, days=31):
+def generate(handle, days=31, source=None):
     """完整流水线，返回 (html 字符串, kline dict)。供 CLI 和 Web UI 复用。"""
     handle = handle.lstrip("@")
-    rows, pf = pull(handle, days)
+    rows, pf = pull(handle, days, source)
     if not rows:
         raise ValueError("没有取到带阅读量的原创推文")
     kline = build_kline(rows, pf, handle)
@@ -278,10 +359,12 @@ def main():
     ap.add_argument("handle", help="X/Twitter 用户名（带不带 @ 都行）")
     ap.add_argument("--days", type=int, default=31, help="回看天数（默认 31）")
     ap.add_argument("--out", default=".", help="输出目录（默认当前目录）")
+    ap.add_argument("--source", choices=["x", "huohua"], default=None,
+                    help="数据源：x=官方 X API，huohua=火花；默认按可用 token 自动选（X 优先）")
     a = ap.parse_args()
     handle = a.handle.lstrip("@")
     print(f"拉取 @{handle} 近 {a.days} 天推文…", file=sys.stderr)
-    rows, pf = pull(handle, a.days)
+    rows, pf = pull(handle, a.days, a.source)
     if not rows:
         sys.exit("没有取到带阅读量的原创推文（账号可能近期无原创推文，或老推文无 view_count 字段）")
     kline = build_kline(rows, pf, handle)

@@ -16,9 +16,23 @@
 
 两种用法：**命令行**（出一个 HTML 文件）或 **Web UI**（输入用户名即看）。
 
-## 准备：火花 data-token
+## 准备：数据源 token（两选一）
 
-数据是计费的，需要火花 data-token。去 https://huohuaapi.com/console/data-access 复制后任选其一：
+阅读量 = 推文的 impression（曝光）。两个数据源都能取，按可用 token 自动选（X 优先），也可用 `--source` 指定。
+
+### 方式一（推荐）：官方 X API
+
+最标准、最权威，直连 X。需要 [X API](https://developer.x.com) 的 **Bearer Token**（读取用户推文需 Basic 及以上付费档；`public_metrics.impression_count` 即阅读量）：
+
+```bash
+export X_BEARER_TOKEN='你的 Bearer Token'
+# 或写入文件（权限 600）
+mkdir -p ~/.config/x && printf '%s' '你的 Bearer Token' > ~/.config/x/bearer-token && chmod 600 ~/.config/x/bearer-token
+```
+
+### 方式二：火花 API（便宜、国内直连，免折腾 X 付费档）
+
+懒得开通 X API 付费档的话，也可以用[火花 · 推特 API](https://huohuaapi.com/data-sources/social-twitter)（按次计费，国内直连优化线路）。去 https://huohuaapi.com/console/data-access 复制 token：
 
 ```bash
 export HUOHUA_DATA_TOKEN='你的token'
@@ -31,8 +45,10 @@ mkdir -p ~/.config/huohua && printf '%s' '你的token' > ~/.config/huohua/data-t
 ## 用法 A · 命令行
 
 ```bash
-python3 scripts/kline_report.py dotey                 # 出 dotey-kline.html
+python3 scripts/kline_report.py dotey                 # 出 dotey-kline.html（自动选数据源）
 python3 scripts/kline_report.py @elonmusk --days 31 --out ./reports
+python3 scripts/kline_report.py dotey --source x      # 强制用官方 X API
+python3 scripts/kline_report.py dotey --source huohua # 强制用火花
 ```
 
 把报告完整导出成一张长图（需 Chrome；装了 ImageMagick 会自动去白边）：
@@ -74,17 +90,18 @@ python3 webapp/server.py            # 打开 http://127.0.0.1:8787
 .
 ├── SKILL.md                  # AI agent 技能说明书
 ├── README.md                 # 给人看的说明（本文件）
-├── scripts/kline_report.py   # 流水线：拉数据→算K线/人设→渲染
+├── scripts/kline_report.py   # 流水线：拉数据(X API / 火花)→算K线/人设→渲染
+├── scripts/export_png.py     # 把报告 HTML 导出成整张长图
 ├── assets/template.html      # 报告模板
 └── webapp/server.py          # Web UI（标准库 http.server）
 ```
 
 ## 约束
 
-- 只统计有 view_count 的**原创**推文；很老的推文（约 2023 前）无阅读量，会跳过。
+- 只统计有阅读量(impression)的**原创**推文；很老的推文（约 2023 前）无阅读量，会跳过。
 - 「单日」按北京时间(UTC+8)切；近 2 天标「未收盘」。
-- 阅读量是抓取时刻的累计快照，非发布当天值。
-- 每次生成按火花计费规则扣费。
+- 阅读量是抓取时刻的累计值，非发布当天值。
+- 官方 X API 读取用户推文需 Basic 及以上付费档；火花按次计费。两者均自备 token、自付费。
 
 ## License
 

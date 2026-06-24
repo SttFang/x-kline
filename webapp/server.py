@@ -77,11 +77,12 @@ class H(BaseHTTPRequestHandler):
         self._send(404, page("404", "<a href='/' class='text-[#d7352a] underline'>返回首页</a>"))
 
 def main():
-    # 启动前确认 token 在（只检查存在，不打印）
-    try: K.token()
-    except SystemExit as e:
-        print(e); sys.exit(1)
-    print(f"▶ 推特 K 线 Web UI: http://127.0.0.1:{PORT}", file=sys.stderr)
+    # 启动前确认至少有一个数据源 token（只检查存在，不打印）
+    if not (K.x_token() or K.huohua_token()):
+        print("未找到数据源 token：设置 X_BEARER_TOKEN（官方 X API）或 HUOHUA_DATA_TOKEN（火花）")
+        sys.exit(1)
+    src = "官方 X API" if K.x_token() else "火花"
+    print(f"▶ X 线 Web UI: http://127.0.0.1:{PORT}（数据源：{src}）", file=sys.stderr)
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
 
 if __name__ == "__main__":
