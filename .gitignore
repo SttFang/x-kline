@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*-kline.html
+/reports/
+/data/
+.DS_Store

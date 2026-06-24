@@ -1,0 +1,370 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>X 线 · 阅读量 K 线 + 人设鉴定</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config={theme:{extend:{colors:{
+  paper:'#f2f0e9',card:'#ffffff',
+  zhu:'#d7352a',dai:'#1b8a5a',gold:'#be8a1c',indigo:'#27406b',ink:'#1a1916',
+  up:'#d7352a',down:'#1b8a5a'},   // 红涨绿跌=朱砂/黛绿
+  fontFamily:{sans:['-apple-system','PingFang SC','Microsoft YaHei','sans-serif'],
+    num:['"Space Grotesk"','-apple-system','sans-serif']},
+  boxShadow:{soft:'0 1px 2px rgba(26,25,22,.05),0 10px 30px rgba(26,25,22,.07)'}}}}
+</script>
+<style>
+  body{background:
+    radial-gradient(700px 360px at 88% -6%,#f6e7da 0,rgba(246,231,218,0) 58%),
+    radial-gradient(680px 340px at -4% 2%,#e7ede8 0,rgba(231,237,232,0) 55%),#f2f0e9}
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#ddd6c9;border-radius:8px}
+  .tnum{font-family:'Space Grotesk',-apple-system,'PingFang SC',sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .line-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .line-clamp-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  /* 签名：朱砂方印 */
+  .seal{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;
+    background:#d7352a;color:#fff;font-weight:700;font-size:13px;box-shadow:0 1px 0 rgba(0,0,0,.15),inset 0 0 0 1px rgba(255,255,255,.18)}
+</style></head>
+<body class="text-ink font-sans antialiased">
+<div class="max-w-5xl mx-auto px-5 py-9">
+
+  <!-- ① 身份 · 你是谁（居中资料卡）-->
+  <header class="flex flex-col items-center text-center mb-8">
+    <img id="avatar" crossorigin="anonymous" class="w-20 h-20 rounded-2xl ring-2 ring-white shadow-soft object-cover bg-stone-100" alt="">
+    <div class="flex items-center justify-center gap-2 mt-3">
+      <h1 id="name" class="text-2xl font-extrabold tracking-tight"></h1>
+      <svg id="verified" class="w-5 h-5 text-sky-500 hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 1.8 3 .2.9 2.9 2.3 1.9-1 2.8 1 2.8-2.3 1.9-.9 2.9-3 .2L12 22l-2.4-1.8-3-.2-.9-2.9L3.4 15l1-2.8-1-2.8 2.3-1.9.9-2.9 3-.2zm-1.1 13.3l5.2-5.2-1.4-1.4-3.8 3.8-1.7-1.7L7 12.2z"/></svg>
+      <span id="handle" class="text-stone-500"></span>
+    </div>
+    <div id="hero-meta" class="text-xs text-stone-400 mt-2.5 tnum"></div>
+  </header>
+
+  <!-- ② X 线 · 怎么爆的（主角大图）-->
+  <section class="bg-card rounded-3xl shadow-soft ring-1 ring-black/5 p-5 mb-6">
+    <div class="flex items-start justify-between mb-1 gap-3 flex-wrap">
+      <h2 class="font-extrabold text-xl flex items-center gap-2"><span class="seal" style="width:22px;height:22px;font-size:12px">X</span>X 线 · 阅读量 K 线</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-1 text-xs bg-stone-100 rounded-xl p-1">
+          <button data-scale="log" class="sclbtn px-3 py-1.5 rounded-lg bg-white shadow-sm text-ink font-medium">对数轴</button>
+          <button data-scale="linear" class="sclbtn px-3 py-1.5 rounded-lg text-stone-400">线性轴</button>
+        </div>
+        <div class="flex items-center gap-1 text-xs bg-stone-100 rounded-xl p-1">
+          <button data-vol="count" class="volbtn px-3 py-1.5 rounded-lg bg-white shadow-sm text-ink font-medium">量=推文数</button>
+          <button data-vol="views" class="volbtn px-3 py-1.5 rounded-lg text-stone-400">量=总阅读</button>
+        </div>
+      </div>
+    </div>
+    <p id="summary" class="text-sm text-stone-500 mb-3"></p>
+    <div id="daily"></div>
+    <div class="flex gap-4 mt-3 text-xs text-stone-500 flex-wrap items-center">
+      <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-sm bg-up inline-block"></i>红涨 中位走高</span>
+      <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-sm bg-down inline-block"></i>绿跌 中位走低</span>
+      <span class="flex items-center gap-1.5"><span class="text-gold font-bold">★</span>爆款日</span>
+      <span class="flex items-center gap-1.5"><i class="w-3 h-3 rounded-sm inline-block" style="background:#d8cfc0"></i>淡=近2日未收盘</span>
+      <span class="text-stone-400">点蜡烛看当天</span>
+    </div>
+  </section>
+
+  <!-- ③ 爆款代表作 · 封了哪些神 -->
+  <section class="mb-6">
+    <h2 class="font-bold text-lg mb-3 flex items-center gap-2"><span class="text-gold">✦</span>爆款时刻 · 你的爆款 Top</h2>
+    <div id="highlights" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+  </section>
+
+  <!-- ④ 复盘 · 该多发什么 -->
+  <section class="bg-card rounded-3xl shadow-soft ring-1 ring-black/5 p-5 mb-6">
+    <h2 class="font-bold text-lg flex items-center gap-2"><span class="text-up">▲</span>复盘 · 哪类内容最能打</h2>
+    <p class="text-xs text-stone-400 mt-0.5 mb-4">按「单条阅读量中位数」排序，条形越长越稳。这回答：<b class="text-ink">下一条该多发什么</b>。</p>
+    <div id="topics" class="space-y-2.5"></div>
+    <p id="topic-insight" class="text-sm text-stone-600 mt-4 bg-[#fff7ec] rounded-xl px-3.5 py-2.5 ring-1 ring-gold/20"></p>
+    <div id="recap-stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-stone-100"></div>
+  </section>
+
+  <!-- 🆕 X 线 · 竖版可分享海报 -->
+  <section class="mb-5">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div>
+        <h2 class="font-bold text-lg flex items-center gap-2"><span class="seal">X</span>X 线 · 分享海报</h2>
+        <p class="text-xs text-stone-400 mt-0.5">截图即发，或一键发到 X。</p>
+      </div>
+    </div>
+    <!-- 第一性原理：谁的战绩 + 一个英雄数字 + 一句撑场 + 一个钩子。其余全删 -->
+    <div id="sharecard" class="relative overflow-hidden rounded-3xl shadow-soft ring-1 ring-white/10 px-7 pt-7 pb-6 text-white mx-auto w-full max-w-[340px]"
+         style="background:radial-gradient(130% 90% at 80% -12%,#7a1f17 0,rgba(122,31,23,0) 55%),linear-gradient(165deg,#191210 0%,#241310 60%,#3a1812 100%)">
+      <!-- 居中人设卡头：头像 + 名 + 人设标签 -->
+      <div class="flex flex-col items-center text-center">
+        <img id="sc-avatar" crossorigin="anonymous" class="w-14 h-14 rounded-full ring-2 ring-white/20 object-cover bg-white/10" alt="">
+        <div id="sc-name" class="font-bold leading-tight mt-2"></div>
+        <div id="sc-handle" class="text-white/45 text-xs tnum"></div>
+        <span id="sc-id" class="inline-flex items-center text-[#f0c14b] text-xl font-bold border border-[#f0c14b]/45 rounded-full px-4 py-1.5 mt-3"></span>
+        <p id="sc-why" class="text-white/55 text-xs mt-2 leading-relaxed max-w-[280px]"></p>
+      </div>
+      <div class="mt-5 flex items-baseline justify-between">
+        <span class="text-xl font-extrabold tracking-[.06em]">X 线</span>
+        <span id="sc-window" class="text-white/40 text-xs tnum"></span>
+      </div>
+      <!-- 英雄=那条路：曲线 + 爆款时刻峰值，看得见在哪几天爬到多高 -->
+      <div id="sc-journey" class="mt-2 -mx-1"></div>
+      <!-- 爆款代表作：峰值那条推文单独拿出来 -->
+      <a id="sc-feat" target="_blank" class="block mt-3 bg-white/[.07] rounded-2xl p-3.5 border-l-[3px] border-[#f0c14b]">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[#f0c14b] text-xs font-bold tracking-wide">★ 爆款代表作</span>
+          <span id="sc-feat-views" class="text-[#f0c14b] text-sm font-bold tnum"></span>
+        </div>
+        <p id="sc-feat-text" class="text-white/85 text-sm leading-snug"></p>
+        <div id="sc-feat-meta" class="text-white/40 text-xs mt-1.5 tnum"></div>
+      </a>
+      <div id="sc-strip" class="mt-3 flex items-baseline gap-1.5 flex-wrap"></div>
+      <a id="sc-cta" target="_blank" class="mt-6 pt-4 border-t border-white/10 flex items-center justify-between">
+        <span class="text-[#f0c14b] text-sm font-semibold">测测你的X 线 →</span>
+        <span class="text-white/40 text-xs">火花 · 推特中转 API</span>
+      </a>
+    </div>
+    <!-- 行动：发到X(主) / 下载 / 周报假门 -->
+    <div class="flex flex-wrap items-center justify-center gap-2.5 mt-4">
+      <button id="toX" class="text-sm font-semibold bg-zhu text-white rounded-xl px-5 py-2.5 hover:brightness-110 active:scale-95 transition shadow-soft">🐦 一键发到 X</button>
+      <button id="dl" class="text-sm font-medium bg-ink text-white rounded-xl px-4 py-2.5 hover:opacity-90 active:scale-95 transition">⬇ 下载海报</button>
+      <button id="weekly" class="text-sm font-medium bg-white text-ink ring-1 ring-black/10 rounded-xl px-4 py-2.5 hover:bg-stone-50 active:scale-95 transition">📬 订阅每周爆款周报</button>
+    </div>
+    <p id="toX-hint" class="text-xs text-stone-400 text-center mt-2"></p>
+  </section>
+
+  <footer class="text-xs text-stone-400 pt-1 pb-6">
+    数据来自 <a href="https://huohuaapi.com/data-sources/social-twitter" target="_blank" class="text-stone-500 hover:text-zhu">火花 · 推特 API</a>
+  </footer>
+</div>
+
+<!-- 日内弹窗 -->
+<div id="modal" class="fixed inset-0 z-40 hidden">
+  <div data-close class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-3xl">
+    <div class="bg-card rounded-3xl shadow-2xl ring-1 ring-black/10 p-5 max-h-[86vh] overflow-auto">
+      <div class="flex items-start justify-between mb-3 gap-3">
+        <div>
+          <h2 class="font-bold text-lg">日内 · <span id="i-date" class="text-gold"></span></h2>
+          <span id="i-meta" class="text-xs text-stone-500"></span>
+        </div>
+        <button data-close class="text-stone-400 hover:text-ink text-xl leading-none px-2">✕</button>
+      </div>
+      <div id="intra"></div>
+      <p class="text-xs text-stone-400 mt-2">折线=当天每条推文（按发布时间）的阅读量；悬停看正文，点击打开原推。</p>
+      <div id="i-tweets" class="mt-3 max-h-72 overflow-auto divide-y divide-stone-100"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tip" class="fixed pointer-events-none hidden bg-white rounded-xl px-3 py-2 text-xs max-w-xs shadow-soft ring-1 ring-black/10 z-[60]"></div>
+
+<script>
+const KLINE = __KLINE_JSON__;
+const fmt = n => { n=Math.round(n||0);
+  if(n>=1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'')+'亿';
+  if(n>=1e4) return (n/1e4).toFixed(1).replace(/\.0$/,'')+'万';
+  return ''+n; };
+const keyOf = t => `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+const $ = id => document.getElementById(id);
+const P = KLINE.profile || {};
+const UP='#d7352a', DOWN='#1b8a5a';   // 朱砂 / 黛绿
+
+const totalViews = Object.values(KLINE.intraday).reduce((a,d)=>a+d.sumViews,0);
+const best = Object.entries(KLINE.intraday).sort((a,b)=>b[1].sumViews-a[1].sumViews)[0];
+
+// ---- ① 身份 ----
+$('avatar').src = P.avatar || '';
+$('avatar').onerror = ()=>{$('avatar').style.display='none'};
+$('name').textContent = P.name || KLINE.handle;
+$('handle').textContent = '@'+KLINE.handle;
+if(P.verified) $('verified').classList.remove('hidden');
+$('hero-meta').textContent = `${fmt(P.followers)} 粉丝 · ${fmt(P.statuses)} 推文 · ${(KLINE.range||[]).join(' → ')}`;
+
+// ---- ② X 线 副标题 ----
+$('summary').textContent = KLINE.summary || '';
+
+// ---- ④ 复盘区指标条 ----
+$('recap-stats').innerHTML = [
+  ['爆款 10w+', KLINE.bombCount, 'text-up'],['区间总阅读', fmt(totalViews), 'text-gold'],
+  ['最高单条', fmt(KLINE.peakViews), 'text-ink'],['日均推文', (KLINE.totalTweets/Math.max(KLINE.totalDays,1)).toFixed(1), 'text-ink']
+].map(([k,v,c])=>`<div class="text-center"><div class="text-xs text-stone-400">${k}</div><div class="text-xl font-extrabold mt-0.5 tnum ${c}">${v}</div></div>`).join('');
+
+// ---- 主题阳线榜 ----
+const topics = KLINE.topics||[];
+const maxMed = Math.max(1,...topics.map(t=>t.median));
+$('topics').innerHTML = topics.map((t,i)=>`
+  <div class="flex items-center gap-3">
+    <div class="w-20 shrink-0 text-sm ${i===0?'font-bold text-up':'text-stone-600'}">${i===0?'👑 ':''}${t.topic}</div>
+    <div class="flex-1 bg-stone-100 rounded-lg h-7 relative overflow-hidden">
+      <div class="h-full rounded-lg" style="width:${Math.max(6,t.median/maxMed*100)}%;background:${i===0?'linear-gradient(90deg,#e3a02f,#d7352a)':'#e3dbcb'}"></div>
+      <span class="absolute inset-y-0 left-2 flex items-center text-xs font-semibold ${i===0?'text-white':'text-stone-600'}">中位 ${fmt(t.median)}</span>
+    </div>
+    <div class="w-28 shrink-0 text-xs text-stone-400 text-right tnum">${t.count}条 · ${t.bombs}爆款</div>
+  </div>`).join('');
+if(topics[0]) $('topic-insight').innerHTML =
+  `💡 复盘结论：<b class="text-up">「${topics[0].topic}」</b>是你的阳线，单条中位阅读 <b>${fmt(topics[0].median)}</b>`+
+  `（共 ${topics[0].count} 条、${topics[0].bombs} 次爆款）。下一条优先往这个方向发。`;
+
+// ---- highlights ----
+$('highlights').innerHTML = (KLINE.highlights||[]).map((h,i)=>`
+  <div class="relative bg-card rounded-2xl shadow-soft ring-1 ring-black/5 p-4 pl-12 hover:ring-zhu/40 hover:-translate-y-0.5 transition cursor-pointer group" data-date="${h.date}">
+    <span class="seal absolute left-4 top-4" title="爆款 第${i+1}">${i+1}</span>
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs text-stone-400 tnum">${h.date} ${h.hhmm}</span>
+      <span class="text-sm font-extrabold text-zhu tnum">${fmt(h.views)} 阅读</span>
+    </div>
+    <p class="text-sm text-ink/90 leading-snug line-clamp-3">${h.text||'(无正文)'}</p>
+    <div class="flex items-center justify-between mt-2.5">
+      <span class="text-xs text-stone-400 tnum">♥ ${fmt(h.fav)} · ↻ ${fmt(h.rt)} · 💬 ${fmt(h.reply)}</span>
+      <a href="${h.url||'#'}" target="_blank" class="text-xs text-sky-600 opacity-0 group-hover:opacity-100" onclick="event.stopPropagation()">原推 ↗</a>
+    </div>
+  </div>`).join('');
+
+// ---- 分享卡 ----
+$('sc-avatar').src = P.avatar||''; $('sc-avatar').onerror=()=>{$('sc-avatar').style.display='none'};
+$('sc-name').textContent = P.name||KLINE.handle;
+$('sc-handle').textContent = '@'+KLINE.handle;
+const ID = KLINE.identity||{};
+$('sc-id').textContent = ID.label||'';
+$('sc-why').textContent = ID.why||'';
+$('sc-window').textContent = (KLINE.range||[]).join(' → ');
+// 爆款代表作：把峰值推文单独featured出来
+const feat = (KLINE.highlights||[])[0];
+if(feat){
+  $('sc-feat').href = feat.url||'#';
+  $('sc-feat-views').textContent = fmt(feat.views)+' 阅读';
+  $('sc-feat-text').textContent = (feat.text||'(无正文)').slice(0,52)+((feat.text||'').length>52?'…':'');
+  $('sc-feat-meta').textContent = `${feat.date} ${feat.hhmm} · ♥${fmt(feat.fav)} ↻${fmt(feat.rt)}`;
+}
+$('sc-strip').innerHTML =
+  `<span class="tnum text-[#f0c14b] text-4xl font-bold leading-none">${KLINE.bombCount}</span>`+
+  `<span class="text-white text-base font-bold ml-0.5">次爆款</span>`+
+  `<span class="text-white/45 text-sm ml-1">· ${KLINE.totalDays}天 · 累计 ${fmt(totalViews)} 阅读</span>`;
+// X 线：以「每日爆款峰值」为路，爆款时刻(10w+)标金点，最高峰打标 —— 看得见怎么爆的
+(function(){
+  const cs=KLINE.candles||[]; if(cs.length<2)return;
+  const hs=cs.map(c=>c.high), mx=Math.max(...hs), n=cs.length, BOMB=KLINE.bombThreshold||1e5;
+  const W=600,H=176,padT=30,padB=12;
+  const X=i=>(i/(n-1)*W), Y=v=>(padT+(1-v/(mx||1))*(H-padT-padB));   // 基线=0，爆款日如塔
+  const line=hs.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+  let dots=''; hs.forEach((v,i)=>{ if(v>=BOMB) dots+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="#f0c14b"/>`; });
+  const pi=hs.indexOf(mx), px=X(pi), py=Y(mx);
+  const peak=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5.5" fill="#fff" stroke="#f0c14b" stroke-width="2.5"/>`+
+    `<text x="${px.toFixed(1)}" y="${(py-12).toFixed(1)}" fill="#f0c14b" font-size="16" font-weight="700" text-anchor="middle">★</text>`;
+  $('sc-journey').innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    <defs><linearGradient id="jg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0c14b" stop-opacity=".26"/><stop offset="1" stop-color="#f0c14b" stop-opacity="0"/></linearGradient></defs>
+    <polygon points="0,${H} ${line} ${W},${H}" fill="url(#jg)"/>
+    <polyline points="${line}" fill="none" stroke="#f0c14b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${peak}</svg>`;
+})();
+// 导流目标：火花「推特中转 API」数据源页（带 utm 归因）
+const HUOHUA_TWITTER_API = 'https://huohuaapi.com/data-sources/social-twitter?utm_source=fengshen_kline&utm_medium=share_card';
+$('sc-cta').href = HUOHUA_TWITTER_API;
+// 解A3 一键发到 X（StoryBrand：英雄=博主自己，过渡CTA=让看到的人也来测）
+const shareText = `我的推特${KLINE.totalDays}天：${KLINE.bombCount}次爆款（单条10w+），累计${fmt(totalViews)}阅读 📈\n用火花推特API把你的阅读量做成X 线 →`;
+$('toX').onclick = ()=>{
+  window.open('https://x.com/intent/tweet?text='+encodeURIComponent(shareText)+'&url='+encodeURIComponent(HUOHUA_TWITTER_API),'_blank');
+  $('toX-hint').textContent = '已打开发推窗口 · X 不支持自动带图，记得先「下载海报」再粘到推文里';
+};
+// 解C2：假门实验 — 测「每周爆款周报」需求，不真做，先验证意愿
+$('weekly').onclick = ()=>{
+  $('weekly').textContent='✓ 已记录，上线后通知你';
+  $('weekly').disabled=true; $('weekly').classList.add('opacity-60');
+  try{console.log('[fake-door] weekly-report intent', KLINE.handle);}catch(e){}
+};
+$('dl').onclick = async ()=>{
+  $('dl').textContent='生成中…';
+  try{
+    const c=await html2canvas($('sharecard'),{scale:2,useCORS:true,backgroundColor:null});
+    const a=document.createElement('a'); a.download=`${KLINE.handle}-xline.png`; a.href=c.toDataURL('image/png'); a.click();
+  }catch(e){ alert('生成失败：'+e.message); }
+  $('dl').textContent='⬇ 下载图片分享';
+};
+
+// ---- charts ----
+const base = {layout:{background:{color:'#ffffff'},textColor:'#78716c',fontFamily:'-apple-system,PingFang SC,sans-serif'},
+  grid:{vertLines:{color:'#f4f1ea'},horzLines:{color:'#f1efe9'}},
+  rightPriceScale:{borderColor:'#ece7dd'},timeScale:{borderColor:'#ece7dd'},
+  crosshair:{mode:0,vertLine:{color:'#cbb89a',labelBackgroundColor:'#d98a1f'},horzLine:{color:'#cbb89a',labelBackgroundColor:'#d98a1f'}}};
+
+const dEl=$('daily');
+const LOG=LightweightCharts.PriceScaleMode.Logarithmic, LIN=LightweightCharts.PriceScaleMode.Normal;
+const dChart=LightweightCharts.createChart(dEl,{...base,height:400,
+  handleScroll:false, handleScale:false,                       // 锁死：不让随意拖动/缩放
+  timeScale:{...base.timeScale,fixLeftEdge:true,fixRightEdge:true,lockVisibleTimeRangeOnResize:true},
+  rightPriceScale:{...base.rightPriceScale,scaleMargins:{top:0.12,bottom:0.26},mode:LOG}});
+const candle=dChart.addCandlestickSeries({upColor:UP,downColor:DOWN,wickUpColor:UP,wickDownColor:DOWN,
+  borderVisible:true,borderUpColor:UP,borderDownColor:DOWN,priceFormat:{type:'custom',formatter:fmt}});
+candle.setData(KLINE.candles);
+candle.setMarkers(KLINE.markers);
+const vol=dChart.addHistogramSeries({priceScaleId:'',priceFormat:{type:'volume'}});
+vol.priceScale().applyOptions({scaleMargins:{top:0.84,bottom:0}});
+const volData = {
+  count: KLINE.volumes.map(v=>({time:v.time,value:v.value,color:v.color})),
+  views: KLINE.candles.map(c=>({time:c.time,value:KLINE.intraday[keyOf(c.time)].sumViews,color:c.color}))
+};
+vol.setData(volData.count);
+dChart.timeScale().fitContent();
+new ResizeObserver(()=>dChart.applyOptions({width:dEl.clientWidth})).observe(dEl);
+document.querySelectorAll('.volbtn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.volbtn').forEach(x=>x.className='volbtn px-3 py-1.5 rounded-lg text-stone-400');
+  b.className='volbtn px-3 py-1.5 rounded-lg bg-white shadow-sm text-ink font-medium';
+  vol.setData(volData[b.dataset.vol]);
+});
+document.querySelectorAll('.sclbtn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.sclbtn').forEach(x=>x.className='sclbtn px-3 py-1.5 rounded-lg text-stone-400');
+  b.className='sclbtn px-3 py-1.5 rounded-lg bg-white shadow-sm text-ink font-medium';
+  candle.priceScale().applyOptions({mode: b.dataset.scale==='log'?LOG:LIN});
+});
+
+// 日内（弹窗内）
+const iEl=$('intra');
+const iChart=LightweightCharts.createChart(iEl,{...base,height:240,
+  handleScroll:false, handleScale:false,
+  timeScale:{...base.timeScale,timeVisible:true,secondsVisible:false,fixLeftEdge:true,fixRightEdge:true}});
+const iArea=iChart.addAreaSeries({lineColor:'#d98a1f',topColor:'rgba(217,138,31,.22)',bottomColor:'rgba(217,138,31,0)',
+  lineWidth:2,priceFormat:{type:'custom',formatter:fmt}});
+let curPoints=[];
+function showDay(dateKey){
+  const d=KLINE.intraday[dateKey]; if(!d)return;
+  curPoints=d.points;
+  $('i-date').textContent=dateKey+(d.unsettled?' · 未收盘':'');
+  $('i-meta').innerHTML=`推文 <b class="text-ink">${d.count}</b> · 中位 <b class="text-gold">${fmt(d.median)}</b> · 四分位 ${fmt(d.q25)}–${fmt(d.q75)} · 爆款 <b class="text-up">${fmt(d.topViews)}</b> · 哑火 ${fmt(d.low)}`;
+  iArea.setData(d.points.map(p=>({time:p.time,value:p.value})));
+  iArea.setMarkers(d.points.map(p=>({time:p.time,position:'inBar',color:'#0ea5e9',shape:'circle'})));
+  const top=Math.max(...d.points.map(p=>p.value));
+  $('i-tweets').innerHTML=d.points.slice().reverse().map(p=>`
+    <a href="${p.url||'#'}" target="_blank" class="flex items-center gap-3 py-2 text-sm hover:bg-stone-50 px-2 rounded-lg group">
+      <span class="text-stone-400 tnum shrink-0 w-12">${p.hhmm}</span>
+      <span class="shrink-0 w-16 text-right tnum font-bold ${p.value===top?'text-up':'text-stone-600'}">${fmt(p.value)}</span>
+      <span class="flex-1 truncate text-stone-700 group-hover:text-ink">${p.text||'(无正文)'}</span>
+      <span class="text-stone-400 text-xs tnum shrink-0">♥${fmt(p.fav)} ↻${fmt(p.rt)} <span class="text-sky-600 opacity-0 group-hover:opacity-100">↗</span></span>
+    </a>`).join('');
+}
+
+// 弹窗：点蜡烛/X线卡 → 直接弹出当天日内
+function openModal(dateKey){
+  showDay(dateKey);
+  $('modal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
+  requestAnimationFrame(()=>{iChart.applyOptions({width:iEl.clientWidth});iChart.timeScale().fitContent();});
+}
+function closeModal(){$('modal').classList.add('hidden');document.body.style.overflow='';}
+document.querySelectorAll('[data-close]').forEach(el=>el.onclick=closeModal);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+dChart.subscribeClick(p=>{if(p&&p.time)openModal(keyOf(p.time))});
+$('highlights').querySelectorAll('[data-date]').forEach(el=>el.addEventListener('click',()=>openModal(el.dataset.date)));
+iChart.subscribeClick(param=>{ if(!param||!param.time)return; const pt=curPoints.find(x=>x.time===param.time); if(pt&&pt.url)window.open(pt.url,'_blank'); });
+
+// 日内悬停 tooltip
+const tip=$('tip');
+iChart.subscribeCrosshairMove(param=>{
+  if(!param.time||!param.point){tip.classList.add('hidden');return;}
+  const p=curPoints.find(x=>x.time===param.time);
+  if(!p){tip.classList.add('hidden');return;}
+  tip.innerHTML=`<div class="font-bold tnum" style="color:#d98a1f">${p.hhmm} · ${fmt(p.value)} 阅读</div><div class="mt-1 text-stone-600">${p.text||'(无正文)'}</div>`;
+  tip.classList.remove('hidden');
+  const r=iEl.getBoundingClientRect();
+  tip.style.left=Math.min(param.point.x+r.left+14,innerWidth-300)+'px';
+  tip.style.top=(param.point.y+r.top+14)+'px';
+});
+</script></body></html>
